@@ -1,0 +1,14 @@
+{
+  "name": "pointwise-delivery-gateway",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "请求转发网关：流式/轻量/慢请求区分计费，按租户的持续+突发额度，取消或后端提前拒绝时按可观察消耗结算",
+  "scripts": {
+    "start": "node src/start.js",
+    "test": "node --test test/"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

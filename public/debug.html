@@ -1,0 +1,847 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>请求转发网关 · 计费调试台</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-1: #fcfcfb;
+    --page: #f9f9f7;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #898781;
+    --gridline: #e1e0d9;
+    --baseline: #c3c2b7;
+    --border: rgba(11,11,11,0.10);
+    --series-1: #2a78d6;
+    --series-2: #eb6834;
+    --series-1-track: #cde2fb;
+    --series-2-track: color-mix(in oklab, #eb6834 16%, #fcfcfb);
+    --good: #0ca30c;
+    --warning: #fab219;
+    --serious: #ec835a;
+    --critical: #d03b3b;
+    --success-text: #006300;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --surface-1: #1a1a19;
+      --page: #0d0d0d;
+      --text-primary: #f0efec;
+      --text-secondary: #c3c2b7;
+      --muted: #898781;
+      --gridline: #2c2c2a;
+      --baseline: #383835;
+      --border: rgba(255,255,255,0.10);
+      --series-1: #3987e5;
+      --series-2: #d95926;
+      --series-1-track: #0d366b;
+      --series-2-track: color-mix(in oklab, #d95926 24%, #1a1a19);
+      --success-text: #0ca30c;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-1: #1a1a19;
+    --page: #0d0d0d;
+    --text-primary: #f0efec;
+    --text-secondary: #c3c2b7;
+    --muted: #898781;
+    --gridline: #2c2c2a;
+    --baseline: #383835;
+    --border: rgba(255,255,255,0.10);
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-1-track: #0d366b;
+    --series-2-track: color-mix(in oklab, #d95926 24%, #1a1a19);
+    --success-text: #0ca30c;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 14px;
+    line-height: 1.45;
+  }
+  header {
+    display: flex; align-items: baseline; gap: 12px;
+    padding: 14px 20px 10px;
+  }
+  header h1 { font-size: 17px; margin: 0; font-weight: 650; }
+  header .sub { color: var(--text-secondary); font-size: 12.5px; }
+  header .spacer { flex: 1; }
+  main { padding: 0 20px 40px; max-width: 1180px; margin: 0 auto; }
+  header { max-width: 1180px; margin: 0 auto; }
+
+  button, select, input {
+    font: inherit; color: var(--text-primary);
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 5px 10px;
+  }
+  button { cursor: pointer; }
+  button:hover { background: color-mix(in oklab, var(--surface-1) 92%, var(--text-primary)); }
+  button.primary { background: var(--series-1); border-color: var(--series-1); color: #fff; }
+  button.primary:hover { filter: brightness(1.08); }
+  button.danger { color: var(--critical); }
+  input[type="number"], input[type="text"] { padding: 4px 8px; }
+  label { color: var(--text-secondary); font-size: 12.5px; }
+  label.inline { display: inline-flex; align-items: center; gap: 5px; }
+
+  .filters {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 10px 0 14px;
+  }
+  .filters .group { display: flex; align-items: center; gap: 6px; }
+  .filters .sep { width: 1px; height: 20px; background: var(--border); }
+
+  .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 12px; }
+  .tile {
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px;
+    padding: 10px 14px;
+  }
+  .tile .label { color: var(--text-secondary); font-size: 12.5px; }
+  .tile .value { font-size: 24px; font-weight: 600; margin-top: 2px; }
+
+  .grid2 { display: grid; grid-template-columns: 1fr 1.6fr; gap: 10px; margin-bottom: 12px; }
+  .card {
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px;
+    padding: 12px 14px; margin-bottom: 12px;
+  }
+  .grid2 .card { margin-bottom: 0; }
+  .card h2 { font-size: 13.5px; margin: 0 0 10px; font-weight: 650; }
+  .card h2 .hint { font-weight: 400; color: var(--muted); font-size: 12px; margin-left: 6px; }
+
+  /* 计量条：轨道是同色阶的浅阶，填充承载严重度 */
+  .meter-row { display: grid; grid-template-columns: 64px 1fr 150px; align-items: center; gap: 10px; margin: 10px 0; }
+  .meter-label { color: var(--text-secondary); font-size: 12.5px; }
+  .meter { height: 12px; border-radius: 6px; overflow: hidden; }
+  .meter.s1 { background: var(--series-1-track); }
+  .meter.s2 { background: var(--series-2-track); }
+  .meter-fill { height: 100%; border-radius: 0 4px 4px 0; transition: width .3s linear, background .3s; }
+  .meter-fill.s1 { background: var(--series-1); }
+  .meter-fill.s2 { background: var(--series-2); }
+  .meter-fill.warn { background: var(--warning); }
+  .meter-fill.crit { background: var(--critical); }
+  .meter-val { font-variant-numeric: tabular-nums; color: var(--text-secondary); font-size: 12.5px; white-space: nowrap; }
+
+  /* 折线图 */
+  .chart-wrap { position: relative; }
+  .chart-wrap svg { display: block; width: 100%; height: auto; outline: none; }
+  .chart-wrap svg:focus-visible { box-shadow: 0 0 0 2px var(--series-1); border-radius: 6px; }
+  .legend { display: flex; gap: 16px; margin: 0 0 6px; font-size: 12.5px; color: var(--text-primary); }
+  .legend .key { display: inline-block; width: 16px; height: 2px; border-radius: 1px; vertical-align: middle; margin-right: 6px; }
+  .tooltip {
+    position: absolute; pointer-events: none; display: none;
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px;
+    padding: 7px 10px; font-size: 12.5px; box-shadow: 0 4px 16px rgba(0,0,0,.12);
+    min-width: 130px; z-index: 5;
+  }
+  .tooltip .tt-time { color: var(--muted); margin-bottom: 4px; font-variant-numeric: tabular-nums; }
+  .tooltip .row { display: flex; align-items: center; gap: 6px; margin: 2px 0; }
+  .tooltip .row .val { font-weight: 650; font-variant-numeric: tabular-nums; }
+  .tooltip .row .name { color: var(--text-secondary); }
+  .tooltip .key { width: 12px; height: 2px; border-radius: 1px; display: inline-block; }
+
+  /* 请求发射台 */
+  .launch { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .launch .pad { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
+  .launch h3 { margin: 0 0 8px; font-size: 13px; }
+  .launch .fields { display: flex; flex-wrap: wrap; gap: 6px 10px; margin-bottom: 8px; }
+  .launch input[type="number"] { width: 64px; }
+  .inflight { margin-top: 10px; }
+  .inflight table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  .inflight td, .inflight th { padding: 4px 8px; text-align: left; border-bottom: 1px solid var(--gridline); }
+
+  /* 参数表单 */
+  .cfg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px 18px; }
+  .cfg fieldset { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px 10px; margin: 0; }
+  .cfg legend { color: var(--text-secondary); font-size: 12.5px; padding: 0 4px; }
+  .cfg .row { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin: 5px 0; }
+  .cfg input { width: 76px; text-align: right; font-variant-numeric: tabular-nums; }
+
+  /* 事件日志 */
+  table.log { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  table.log th { color: var(--text-secondary); font-weight: 500; text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--baseline); }
+  table.log td { padding: 4px 8px; border-bottom: 1px solid var(--gridline); vertical-align: top; }
+  td.num, th.num { font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+  .evt { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+  .evt .ico { font-size: 12px; width: 14px; text-align: center; }
+  .evt.good { color: var(--success-text); }
+  .evt.critical { color: var(--critical); }
+  .evt.serious { color: var(--serious); }
+  .evt.warning { color: color-mix(in oklab, var(--warning) 80%, var(--text-primary)); }
+  .evt.muted { color: var(--text-secondary); }
+  .detail { color: var(--text-secondary); }
+
+  details.tableview { margin-top: 8px; }
+  details.tableview summary { cursor: pointer; color: var(--text-secondary); font-size: 12.5px; }
+  details.tableview table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 6px; }
+  details.tableview td, details.tableview th { padding: 2px 8px; border-bottom: 1px solid var(--gridline); font-variant-numeric: tabular-nums; text-align: right; }
+  details.tableview th:first-child, details.tableview td:first-child { text-align: left; }
+
+  .empty { color: var(--muted); padding: 8px 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>请求转发网关 · 计费调试台</h1>
+  <span class="sub">流式 / 轻量 / 慢请求区分计费 · 持续+突发两级额度 · 按可观察消耗结算</span>
+  <span class="spacer"></span>
+  <label class="inline">主题
+    <select id="themeSel">
+      <option value="auto">跟随系统</option>
+      <option value="light">浅色</option>
+      <option value="dark">深色</option>
+    </select>
+  </label>
+</header>
+
+<main>
+  <!-- 过滤行：作用于下方所有内容 -->
+  <section class="filters">
+    <div class="group">
+      <label for="tenantInput">租户</label>
+      <input id="tenantInput" list="tenantList" value="demo" style="width:120px">
+      <datalist id="tenantList"></datalist>
+    </div>
+    <div class="sep"></div>
+    <div class="group">
+      <label>场景预设</label>
+      <button data-preset="balanced">均衡</button>
+      <button data-preset="cheap-stream">低价流式</button>
+      <button data-preset="pricey-stream">高价流式</button>
+      <button data-preset="shallow-burst">浅突发</button>
+      <button data-preset="deep-burst">深突发</button>
+      <label class="inline"><input type="checkbox" id="presetReset" checked> 应用后重置额度</label>
+    </div>
+    <div class="sep"></div>
+    <button id="resetBtn" class="danger">重置全部额度与事件</button>
+  </section>
+
+  <!-- KPI -->
+  <section class="kpis">
+    <div class="tile"><div class="label">净消耗（全部租户）</div><div class="value" id="kpiNet">0</div></div>
+    <div class="tile"><div class="label">已退费</div><div class="value" id="kpiRefunded">0</div></div>
+    <div class="tile"><div class="label">被拒绝请求</div><div class="value" id="kpiRejected">0</div></div>
+    <div class="tile"><div class="label">进行中请求</div><div class="value" id="kpiInflight">0</div></div>
+  </section>
+
+  <section class="grid2">
+    <!-- 额度计量条 -->
+    <div class="card">
+      <h2>当前租户额度 <span class="hint" id="meterTenant"></span></h2>
+      <div class="meter-row">
+        <div class="meter-label">持续额度</div>
+        <div class="meter s1" role="meter" aria-label="持续额度" aria-valuemin="0" id="meterS"><div class="meter-fill s1" id="fillS"></div></div>
+        <div class="meter-val" id="valS">–</div>
+      </div>
+      <div class="meter-row">
+        <div class="meter-label">突发额度</div>
+        <div class="meter s2" role="meter" aria-label="突发额度" aria-valuemin="0" id="meterB"><div class="meter-fill s2" id="fillB"></div></div>
+        <div class="meter-val" id="valB">–</div>
+      </div>
+      <div class="detail" style="font-size:12px;margin-top:8px">扣费先走持续额度，耗尽后动用突发额度；持续恢复快、突发恢复慢。填充在低水位时变为警示色。</div>
+    </div>
+    <!-- 水位曲线 -->
+    <div class="card">
+      <h2>额度水位（近 2 分钟） <span class="hint">悬停查看数值，←→ 键移动</span></h2>
+      <div class="legend">
+        <span><span class="key" style="background:var(--series-1)"></span>持续额度</span>
+        <span><span class="key" style="background:var(--series-2)"></span>突发额度</span>
+      </div>
+      <div class="chart-wrap">
+        <svg id="chart" viewBox="0 0 640 190" tabindex="0" role="img" aria-label="持续与突发额度随时间变化折线图"></svg>
+        <div class="tooltip" id="tooltip"></div>
+      </div>
+      <details class="tableview">
+        <summary>数据表（最近采样）</summary>
+        <div id="chartTable"></div>
+      </details>
+    </div>
+  </section>
+
+  <!-- 请求发射台 -->
+  <section class="card">
+    <h2>发请求 <span class="hint">参数直接透传给样例后端；failAfter 模拟后端中途崩溃，拒绝=后端立即 503</span></h2>
+    <div class="launch">
+      <div class="pad">
+        <h3>流式 <code>/stream</code></h3>
+        <div class="fields">
+          <label class="inline">块数 <input type="number" id="pChunks" value="20" min="1" max="200"></label>
+          <label class="inline">间隔ms <input type="number" id="pInterval" value="100" min="10" max="2000"></label>
+          <label class="inline">failAfter <input type="number" id="pFailAfter" value="0" min="0" max="200"></label>
+          <label class="inline"><input type="checkbox" id="pStreamReject"> 拒绝</label>
+        </div>
+        <button class="primary" id="fireStream">发送</button>
+        <button id="fireStream10">×10 并发</button>
+      </div>
+      <div class="pad">
+        <h3>轻量查询 <code>/query</code></h3>
+        <div class="fields">
+          <label class="inline">echo <input type="text" id="pEcho" value="hi" style="width:70px"></label>
+          <label class="inline"><input type="checkbox" id="pQueryReject"> 拒绝</label>
+        </div>
+        <button class="primary" id="fireQuery">发送</button>
+        <button id="fireQuery10">×10 并发</button>
+      </div>
+      <div class="pad">
+        <h3>慢请求 <code>/slow</code></h3>
+        <div class="fields">
+          <label class="inline">耗时ms <input type="number" id="pMs" value="4000" min="200" max="30000" step="100"></label>
+          <label class="inline"><input type="checkbox" id="pSlowReject"> 拒绝</label>
+        </div>
+        <button class="primary" id="fireSlow">发送</button>
+        <button id="fireSlow3">×3 并发</button>
+      </div>
+    </div>
+    <div class="inflight" id="inflightBox" style="display:none">
+      <table>
+        <thead><tr><th>#</th><th>类别</th><th>租户</th><th>进度</th><th></th></tr></thead>
+        <tbody id="inflightBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 计费参数 -->
+  <section class="card">
+    <h2>计费与额度参数 <span class="hint">改完点“应用参数”立即生效，可对比不同代价下的拒绝与恢复</span></h2>
+    <div class="cfg">
+      <fieldset>
+        <legend>流式 /stream</legend>
+        <div class="row"><label>准入费</label><input type="number" id="cStreamAdm" step="0.5" min="0"></div>
+        <div class="row"><label>每块费用</label><input type="number" id="cStreamChunk" step="0.1" min="0"></div>
+      </fieldset>
+      <fieldset>
+        <legend>轻量 /query</legend>
+        <div class="row"><label>固定费用</label><input type="number" id="cQueryAdm" step="0.5" min="0"></div>
+      </fieldset>
+      <fieldset>
+        <legend>慢请求 /slow</legend>
+        <div class="row"><label>准入费</label><input type="number" id="cSlowAdm" step="0.5" min="0"></div>
+        <div class="row"><label>每秒费用</label><input type="number" id="cSlowSec" step="0.5" min="0"></div>
+      </fieldset>
+      <fieldset>
+        <legend>持续额度</legend>
+        <div class="row"><label>容量</label><input type="number" id="cCapS" step="1" min="0"></div>
+        <div class="row"><label>恢复/秒</label><input type="number" id="cRateS" step="0.5" min="0"></div>
+      </fieldset>
+      <fieldset>
+        <legend>突发额度</legend>
+        <div class="row"><label>容量</label><input type="number" id="cCapB" step="1" min="0"></div>
+        <div class="row"><label>恢复/秒</label><input type="number" id="cRateB" step="0.1" min="0"></div>
+      </fieldset>
+      <fieldset>
+        <legend>操作</legend>
+        <div class="row"><button class="primary" id="applyCfg" style="width:100%">应用参数</button></div>
+        <div class="row"><span class="detail" id="cfgMsg"></span></div>
+      </fieldset>
+    </div>
+  </section>
+
+  <!-- 事件日志 -->
+  <section class="card">
+    <h2>事件日志 <span class="hint">最近 80 条，新事件在上</span></h2>
+    <table class="log">
+      <thead>
+        <tr><th>时间</th><th>租户</th><th>事件</th><th>详情</th><th class="num">余额 持续/突发</th></tr>
+      </thead>
+      <tbody id="logBody"></tbody>
+    </table>
+    <div class="empty" id="logEmpty">暂无事件</div>
+  </section>
+</main>
+
+<script>
+'use strict';
+/* ---------------- 主题 ---------------- */
+const themeSel = document.getElementById('themeSel');
+function applyTheme(mode) {
+  const root = document.documentElement;
+  if (mode === 'auto') root.removeAttribute('data-theme');
+  else root.setAttribute('data-theme', mode);
+  localStorage.setItem('gw-theme', mode);
+  themeSel.value = mode;
+}
+themeSel.addEventListener('change', () => applyTheme(themeSel.value));
+applyTheme(localStorage.getItem('gw-theme') || 'auto');
+
+/* ---------------- 状态 ---------------- */
+const $ = (id) => document.getElementById(id);
+const tenantInput = $('tenantInput');
+const state = {
+  data: null,
+  history: new Map(),   // tenant -> [{t, s, b}]
+  inflight: new Map(),  // id -> {kind, tenant, ctrl, progress, startedAt, done}
+  reqSeq: 0,
+  cfgDirty: false,
+};
+const MAX_HIST = 240; // 500ms 一次 ≈ 2 分钟
+
+function selectedTenant() { return tenantInput.value.trim() || 'demo'; }
+
+/* ---------------- 轮询 ---------------- */
+async function poll() {
+  let data;
+  try {
+    const r = await fetch('/api/state');
+    data = await r.json();
+  } catch { return; }
+  state.data = data;
+  const now = Date.now();
+  for (const [id, t] of Object.entries(data.tenants)) {
+    let h = state.history.get(id);
+    if (!h) { h = []; state.history.set(id, h); }
+    h.push({ t: now, s: t.bucket.sustained, b: t.bucket.burst });
+    if (h.length > MAX_HIST) h.splice(0, h.length - MAX_HIST);
+  }
+  renderKpis(data);
+  renderMeters(data);
+  renderChart();
+  renderLog(data);
+  renderTenantList(data);
+  renderInflight();
+  if (!state.cfgDirty) fillConfig(data.config);
+}
+setInterval(poll, 500);
+poll();
+
+/* ---------------- KPI / 计量条 ---------------- */
+function fmt(n) { return Math.round(n * 10) / 10; }
+
+function renderKpis(d) {
+  $('kpiNet').textContent = fmt(d.totals.net);
+  $('kpiRefunded').textContent = fmt(d.totals.refunded);
+  $('kpiRejected').textContent = d.totals.rejected;
+  $('kpiInflight').textContent = d.inFlight;
+}
+
+function meterSeverity(fillEl, ratio) {
+  fillEl.classList.toggle('warn', ratio < 0.4 && ratio >= 0.15);
+  fillEl.classList.toggle('crit', ratio < 0.15);
+}
+
+function renderMeters(d) {
+  const tid = selectedTenant();
+  $('meterTenant').textContent = tid;
+  const t = d.tenants[tid];
+  const q = d.config.quota;
+  const s = t ? t.bucket.sustained : q.sustained.capacity;
+  const b = t ? t.bucket.burst : q.burst.capacity;
+  const rs = q.sustained.capacity ? s / q.sustained.capacity : 0;
+  const rb = q.burst.capacity ? b / q.burst.capacity : 0;
+  $('fillS').style.width = (rs * 100).toFixed(1) + '%';
+  $('fillB').style.width = (rb * 100).toFixed(1) + '%';
+  meterSeverity($('fillS'), rs);
+  meterSeverity($('fillB'), rb);
+  $('valS').textContent = `${fmt(s)} / ${q.sustained.capacity} · +${q.sustained.refillPerSec}/s`;
+  $('valB').textContent = `${fmt(b)} / ${q.burst.capacity} · +${q.burst.refillPerSec}/s`;
+  $('meterS').setAttribute('aria-valuenow', fmt(s));
+  $('meterS').setAttribute('aria-valuemax', q.sustained.capacity);
+  $('meterB').setAttribute('aria-valuenow', fmt(b));
+  $('meterB').setAttribute('aria-valuemax', q.burst.capacity);
+}
+
+/* ---------------- 折线图 ---------------- */
+const NS = 'http://www.w3.org/2000/svg';
+const CH = { w: 640, h: 190, pl: 40, pr: 66, pt: 10, pb: 20 };
+let hoverIdx = null;
+
+function niceCeil(v) {
+  if (v <= 0) return 1;
+  const pow = Math.pow(10, Math.floor(Math.log10(v)));
+  for (const m of [1, 2, 2.5, 5, 10]) if (v <= m * pow) return m * pow;
+  return 10 * pow;
+}
+
+function el(name, attrs) {
+  const e = document.createElementNS(NS, name);
+  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+  return e;
+}
+
+function seriesColor(i) {
+  return getComputedStyle(document.documentElement).getPropertyValue(i === 0 ? '--series-1' : '--series-2').trim();
+}
+
+function renderChart() {
+  const svg = $('chart');
+  svg.textContent = '';
+  const d = state.data;
+  if (!d) return;
+  const h = state.history.get(selectedTenant()) || [];
+  const q = d.config.quota;
+  const yMax = niceCeil(Math.max(q.sustained.capacity, q.burst.capacity, 1));
+  const now = Date.now();
+  const xMin = now - 120000, xMax = now;
+  const iw = CH.w - CH.pl - CH.pr, ih = CH.h - CH.pt - CH.pb;
+  const x = (t) => CH.pl + ((t - xMin) / (xMax - xMin)) * iw;
+  const y = (v) => CH.pt + ih - (v / yMax) * ih;
+
+  // 网格与 Y 轴刻度
+  const ticks = 4;
+  for (let i = 0; i <= ticks; i++) {
+    const v = (yMax / ticks) * i;
+    const gy = y(v);
+    svg.appendChild(el('line', { x1: CH.pl, x2: CH.w - CH.pr, y1: gy, y2: gy, stroke: 'var(--gridline)', 'stroke-width': 1 }));
+    const lab = el('text', { x: CH.pl - 6, y: gy + 4, 'text-anchor': 'end', 'font-size': 10, fill: 'var(--muted)' });
+    lab.textContent = fmt(v);
+    lab.style.fontVariantNumeric = 'tabular-nums';
+    svg.appendChild(lab);
+  }
+
+  const visible = h.filter((p) => p.t >= xMin);
+  if (visible.length >= 2) {
+    const series = [
+      { key: 's', color: seriesColor(0), name: '持续额度' },
+      { key: 'b', color: seriesColor(1), name: '突发额度' },
+    ];
+    const ends = [];
+    for (const sr of series) {
+      const pts = visible.map((p) => [x(p.t), y(p[sr.key])]);
+      const path = pts.map((p, i) => (i ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' ');
+      svg.appendChild(el('path', { d: path, fill: 'none', stroke: sr.color, 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }));
+      const last = pts[pts.length - 1];
+      const lastVal = visible[visible.length - 1][sr.key];
+      // 端点圆点：2px 表面色描边环
+      svg.appendChild(el('circle', { cx: last[0], cy: last[1], r: 4, fill: sr.color, stroke: 'var(--surface-1)', 'stroke-width': 2 }));
+      ends.push({ y: last[1], val: lastVal, color: sr.color, name: sr.name });
+    }
+    // 端点直接标注；两端过近时都不标（交给图例+悬停）
+    if (Math.abs(ends[0].y - ends[1].y) > 16) {
+      for (const e of ends) {
+        const lab = el('text', { x: CH.w - CH.pr + 10, y: e.y + 4, 'font-size': 11, fill: 'var(--text-secondary)' });
+        lab.textContent = fmt(e.val);
+        lab.style.fontVariantNumeric = 'tabular-nums';
+        svg.appendChild(lab);
+        svg.appendChild(el('circle', { cx: CH.w - CH.pr + 4, cy: e.y, r: 2.5, fill: e.color }));
+      }
+    }
+    // 十字线
+    if (hoverIdx !== null && hoverIdx < visible.length) {
+      const p = visible[hoverIdx];
+      svg.appendChild(el('line', { x1: x(p.t), x2: x(p.t), y1: CH.pt, y2: CH.pt + ih, stroke: 'var(--baseline)', 'stroke-width': 1 }));
+      for (const sr of series) {
+        svg.appendChild(el('circle', { cx: x(p.t), cy: y(p[sr.key]), r: 4, fill: sr.color, stroke: 'var(--surface-1)', 'stroke-width': 2 }));
+      }
+    }
+    // 命中层
+    const hit = el('rect', { x: CH.pl, y: CH.pt, width: iw, height: ih, fill: 'transparent' });
+    hit.addEventListener('pointermove', (ev) => {
+      const rect = svg.getBoundingClientRect();
+      const px = ((ev.clientX - rect.left) / rect.width) * CH.w;
+      const t = xMin + ((px - CH.pl) / iw) * (xMax - xMin);
+      let best = 0, bd = Infinity;
+      visible.forEach((p, i) => { const dd = Math.abs(p.t - t); if (dd < bd) { bd = dd; best = i; } });
+      hoverIdx = best;
+      showTooltip(visible[best], ev);
+      renderChart();
+    });
+    hit.addEventListener('pointerleave', () => { hoverIdx = null; $('tooltip').style.display = 'none'; renderChart(); });
+    svg.appendChild(hit);
+    svg.onkeydown = (ev) => {
+      if (ev.key !== 'ArrowLeft' && ev.key !== 'ArrowRight') return;
+      ev.preventDefault();
+      if (hoverIdx === null) hoverIdx = visible.length - 1;
+      else hoverIdx = Math.max(0, Math.min(visible.length - 1, hoverIdx + (ev.key === 'ArrowRight' ? 1 : -1)));
+      const p = visible[hoverIdx];
+      const rect = svg.getBoundingClientRect();
+      showTooltip(p, { clientX: rect.left + (x(p.t) / CH.w) * rect.width, clientY: rect.top });
+      renderChart();
+    };
+    svg.onblur = () => { hoverIdx = null; $('tooltip').style.display = 'none'; renderChart(); };
+  } else {
+    const msg = el('text', { x: CH.w / 2, y: CH.h / 2, 'text-anchor': 'middle', 'font-size': 12, fill: 'var(--muted)' });
+    msg.textContent = '等待采样…';
+    svg.appendChild(msg);
+  }
+  renderChartTable(visible);
+}
+
+function showTooltip(p, ev) {
+  const tt = $('tooltip');
+  tt.textContent = '';
+  const time = document.createElement('div');
+  time.className = 'tt-time';
+  time.textContent = new Date(p.t).toLocaleTimeString('zh-CN', { hour12: false });
+  tt.appendChild(time);
+  const rows = [
+    { name: '持续额度', val: p.s, color: seriesColor(0) },
+    { name: '突发额度', val: p.b, color: seriesColor(1) },
+  ];
+  for (const r of rows) {
+    const row = document.createElement('div');
+    row.className = 'row';
+    const key = document.createElement('span');
+    key.className = 'key';
+    key.style.background = r.color;
+    const val = document.createElement('span');
+    val.className = 'val';
+    val.textContent = fmt(r.val);
+    const name = document.createElement('span');
+    name.className = 'name';
+    name.textContent = ' ' + r.name;
+    row.append(key, val, name);
+    tt.appendChild(row);
+  }
+  tt.style.display = 'block';
+  const wrap = document.querySelector('.chart-wrap').getBoundingClientRect();
+  const svgRect = $('chart').getBoundingClientRect();
+  let left = ev.clientX - wrap.left + 14;
+  if (left + 150 > wrap.width) left = ev.clientX - wrap.left - 160;
+  tt.style.left = left + 'px';
+  tt.style.top = Math.max(0, ev.clientY - svgRect.top - 10) + 'px';
+}
+
+function renderChartTable(visible) {
+  const box = $('chartTable');
+  box.textContent = '';
+  if (!visible.length) return;
+  const rows = visible.slice(-12).reverse();
+  const table = document.createElement('table');
+  const head = document.createElement('tr');
+  for (const h of ['时间', '持续额度', '突发额度']) {
+    const th = document.createElement('th');
+    th.textContent = h;
+    head.appendChild(th);
+  }
+  table.appendChild(head);
+  for (const p of rows) {
+    const tr = document.createElement('tr');
+    for (const v of [new Date(p.t).toLocaleTimeString('zh-CN', { hour12: false }), fmt(p.s), fmt(p.b)]) {
+      const td = document.createElement('td');
+      td.textContent = v;
+      tr.appendChild(td);
+    }
+    table.appendChild(tr);
+  }
+  box.appendChild(table);
+}
+
+/* ---------------- 事件日志 ---------------- */
+const EVENT_META = {
+  'admitted': { label: '已准入', icon: '→', cls: 'muted' },
+  'rejected': { label: '已拒绝', icon: '✕', cls: 'critical' },
+  'aborted': { label: '中途熔断', icon: '⚠', cls: 'serious' },
+  'settled': { label: '已结算', icon: '✓', cls: 'good' },
+  'backend-rejected': { label: '后端拒绝', icon: '⛔', cls: 'serious' },
+  'backend-error': { label: '后端故障', icon: '⚠', cls: 'serious' },
+  'config': { label: '参数变更', icon: '⚙', cls: 'muted' },
+  'reset': { label: '已重置', icon: '↺', cls: 'muted' },
+  'tenant-created': { label: '新租户', icon: '＋', cls: 'muted' },
+  'gateway-error': { label: '网关错误', icon: '⚠', cls: 'critical' },
+};
+const REASON_LABEL = {
+  completed: '完成', 'client-cancelled': '客户端取消', 'quota-exhausted': '额度耗尽',
+  'backend-rejected': '后端拒绝', 'backend-aborted': '后端中断', 'backend-error': '后端故障',
+};
+
+function eventDetail(e) {
+  switch (e.type) {
+    case 'admitted': return `${e.kind} · 准入费 ${e.charged}`;
+    case 'rejected': return `${e.kind} · 需 ${e.needed} / 余 ${e.available}` + (e.retryAfterSec != null ? ` · 约 ${e.retryAfterSec}s 后可重试` : '');
+    case 'aborted': return `${e.kind} · 已计量 ${e.units} 单位`;
+    case 'settled': return `${e.kind} · ${REASON_LABEL[e.reason] || e.reason} · 计量 ${e.units} 单位 · 净扣 ${e.net}（总 ${e.total} / 退 ${e.refunded}）· ${e.durationMs}ms`;
+    case 'backend-rejected': return `${e.kind} · 状态 ${e.status} · 退准入费 ${e.refunded}`;
+    case 'backend-error': return `${e.kind} · ${e.message} · 退 ${e.refunded}`;
+    default: return e.detail || e.message || '';
+  }
+}
+
+function renderLog(d) {
+  const body = $('logBody');
+  body.textContent = '';
+  const items = d.events.slice(-80).reverse();
+  $('logEmpty').style.display = items.length ? 'none' : 'block';
+  for (const e of items) {
+    const meta = EVENT_META[e.type] || { label: e.type, icon: '·', cls: 'muted' };
+    const tr = document.createElement('tr');
+    const tdT = document.createElement('td');
+    tdT.className = 'num';
+    tdT.textContent = new Date(e.t).toLocaleTimeString('zh-CN', { hour12: false });
+    const tdTenant = document.createElement('td');
+    tdTenant.textContent = e.tenant || '–';
+    const tdEvt = document.createElement('td');
+    const span = document.createElement('span');
+    span.className = 'evt ' + meta.cls;
+    const ico = document.createElement('span');
+    ico.className = 'ico';
+    ico.textContent = meta.icon;
+    const lab = document.createElement('span');
+    lab.textContent = meta.label;
+    span.append(ico, lab);
+    tdEvt.appendChild(span);
+    const tdDetail = document.createElement('td');
+    tdDetail.className = 'detail';
+    tdDetail.textContent = eventDetail(e);
+    const tdLvl = document.createElement('td');
+    tdLvl.className = 'num';
+    tdLvl.textContent = e.levels ? `${fmt(e.levels.sustained)} / ${fmt(e.levels.burst)}` : '–';
+    tr.append(tdT, tdTenant, tdEvt, tdDetail, tdLvl);
+    body.appendChild(tr);
+  }
+}
+
+function renderTenantList(d) {
+  const dl = $('tenantList');
+  const cur = selectedTenant();
+  dl.textContent = '';
+  for (const id of Object.keys(d.tenants)) {
+    const op = document.createElement('option');
+    op.value = id;
+    dl.appendChild(op);
+  }
+  if (!d.tenants[cur]) {
+    const op = document.createElement('option');
+    op.value = cur;
+    dl.appendChild(op);
+  }
+}
+
+/* ---------------- 发请求 ---------------- */
+function addInflightRow(id, rec) {
+  const body = $('inflightBody');
+  const tr = document.createElement('tr');
+  tr.id = 'req-' + id;
+  const tdId = document.createElement('td'); tdId.textContent = '#' + id;
+  const tdKind = document.createElement('td'); tdKind.textContent = rec.kind;
+  const tdTenant = document.createElement('td'); tdTenant.textContent = rec.tenant;
+  const tdProg = document.createElement('td'); tdProg.className = 'num'; tdProg.textContent = '…';
+  const tdBtn = document.createElement('td');
+  const btn = document.createElement('button');
+  btn.textContent = '取消';
+  btn.className = 'danger';
+  btn.addEventListener('click', () => rec.ctrl.abort());
+  tdBtn.appendChild(btn);
+  tr.append(tdId, tdKind, tdTenant, tdProg, tdBtn);
+  body.appendChild(tr);
+  $('inflightBox').style.display = 'block';
+  rec.progEl = tdProg;
+  rec.rowEl = tr;
+  rec.btnEl = btn;
+}
+
+function renderInflight() {
+  const now = Date.now();
+  for (const [id, rec] of state.inflight) {
+    if (rec.done) {
+      if (now - rec.doneAt > 6000) { rec.rowEl?.remove(); state.inflight.delete(id); }
+      continue;
+    }
+    if (rec.kind === 'stream') rec.progEl.textContent = `已收 ${rec.received || 0} 块`;
+    else rec.progEl.textContent = `已等 ${((now - rec.startedAt) / 1000).toFixed(1)}s`;
+  }
+  if (!state.inflight.size) $('inflightBox').style.display = 'none';
+}
+
+function finishReq(id, rec, text) {
+  rec.done = true;
+  rec.doneAt = Date.now();
+  rec.progEl.textContent = text;
+  rec.btnEl.disabled = true;
+}
+
+async function fire(kind, params) {
+  const id = ++state.reqSeq;
+  const tenant = selectedTenant();
+  const ctrl = new AbortController();
+  const rec = { kind, tenant, ctrl, startedAt: Date.now(), received: 0, done: false };
+  state.inflight.set(id, rec);
+  addInflightRow(id, rec);
+  const qs = new URLSearchParams({ tenant, ...params });
+  try {
+    const resp = await fetch(`/${kind}?${qs}`, { signal: ctrl.signal });
+    if (kind === 'stream' && resp.ok && resp.body) {
+      const reader = resp.body.getReader();
+      const dec = new TextDecoder();
+      let buf = '';
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const lines = buf.split('\n');
+        buf = lines.pop();
+        rec.received += lines.filter((l) => l.trim()).length;
+      }
+      if (buf.trim()) rec.received += 1;
+      finishReq(id, rec, `完成 · ${rec.received} 块`);
+    } else {
+      const text = await resp.text();
+      finishReq(id, rec, resp.ok ? `完成 · ${resp.status}` : `失败 · ${resp.status} ${text.slice(0, 60)}`);
+    }
+  } catch (err) {
+    if (ctrl.signal.aborted) finishReq(id, rec, `已取消 · 收 ${rec.received || 0} 块`);
+    else finishReq(id, rec, `错误 · ${String(err).slice(0, 50)}`);
+  }
+  poll();
+}
+
+const on = (id, fn) => $(id).addEventListener('click', fn);
+on('fireStream', () => fire('stream', { chunks: $('pChunks').value, interval: $('pInterval').value, failAfter: $('pFailAfter').value, reject: $('pStreamReject').checked ? 1 : 0 }));
+on('fireStream10', () => { for (let i = 0; i < 10; i++) fire('stream', { chunks: $('pChunks').value, interval: $('pInterval').value, failAfter: $('pFailAfter').value, reject: $('pStreamReject').checked ? 1 : 0 }); });
+on('fireQuery', () => fire('query', { echo: $('pEcho').value, reject: $('pQueryReject').checked ? 1 : 0 }));
+on('fireQuery10', () => { for (let i = 0; i < 10; i++) fire('query', { echo: $('pEcho').value, reject: $('pQueryReject').checked ? 1 : 0 }); });
+on('fireSlow', () => fire('slow', { ms: $('pMs').value, reject: $('pSlowReject').checked ? 1 : 0 }));
+on('fireSlow3', () => { for (let i = 0; i < 3; i++) fire('slow', { ms: $('pMs').value, reject: $('pSlowReject').checked ? 1 : 0 }); });
+
+/* ---------------- 参数与预设 ---------------- */
+const CFG_FIELDS = [
+  ['cStreamAdm', (c) => c.costs.stream.admission], ['cStreamChunk', (c) => c.costs.stream.perChunk],
+  ['cQueryAdm', (c) => c.costs.query.admission],
+  ['cSlowAdm', (c) => c.costs.slow.admission], ['cSlowSec', (c) => c.costs.slow.perSecond],
+  ['cCapS', (c) => c.quota.sustained.capacity], ['cRateS', (c) => c.quota.sustained.refillPerSec],
+  ['cCapB', (c) => c.quota.burst.capacity], ['cRateB', (c) => c.quota.burst.refillPerSec],
+];
+function fillConfig(cfg) {
+  for (const [id, get] of CFG_FIELDS) {
+    const elx = $(id);
+    if (document.activeElement !== elx) elx.value = get(cfg);
+  }
+}
+for (const [id] of CFG_FIELDS) {
+  $(id).addEventListener('input', () => { state.cfgDirty = true; });
+}
+
+on('applyCfg', async () => {
+  const body = {
+    costs: {
+      stream: { admission: +$('cStreamAdm').value, perChunk: +$('cStreamChunk').value },
+      query: { admission: +$('cQueryAdm').value },
+      slow: { admission: +$('cSlowAdm').value, perSecond: +$('cSlowSec').value },
+    },
+    quota: {
+      sustained: { capacity: +$('cCapS').value, refillPerSec: +$('cRateS').value },
+      burst: { capacity: +$('cCapB').value, refillPerSec: +$('cRateB').value },
+    },
+  };
+  const r = await fetch('/api/config', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  $('cfgMsg').textContent = r.ok ? '已应用' : '应用失败';
+  state.cfgDirty = false;
+  poll();
+});
+
+for (const btn of document.querySelectorAll('[data-preset]')) {
+  btn.addEventListener('click', async () => {
+    await fetch('/api/config', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ preset: btn.dataset.preset }) });
+    if ($('presetReset').checked) await fetch('/api/reset', { method: 'POST' });
+    state.cfgDirty = false;
+    state.history.clear();
+    poll();
+  });
+}
+
+on('resetBtn', async () => {
+  await fetch('/api/reset', { method: 'POST' });
+  state.history.clear();
+  poll();
+});
+</script>
+</body>
+</html>
